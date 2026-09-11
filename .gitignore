@@ -6,3 +6,11 @@ __pycache__/
 .DS_Store
 .tools/
 *.log
+
+# PyInstaller 构建产物
+build/
+dist/
+*.spec
+ffmpeg_bin/
+ffmpeg_tmp/
+ffmpeg.zip

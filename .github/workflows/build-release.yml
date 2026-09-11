@@ -1,0 +1,113 @@
+name: Build Releases
+
+on:
+  workflow_dispatch:        # 在 GitHub 仓库 Actions 页面手动触发
+  push:
+    tags:
+      - "v*"                # 打 v 开头标签（如 v1.0.0）自动出包并发布到 Release
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Download static ffmpeg (windows)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_tmp
+          $bin = (Get-ChildItem ffmpeg_tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
+          New-Item -ItemType Directory -Force -Path ffmpeg_bin | Out-Null
+          Copy-Item $bin ffmpeg_bin/ffmpeg.exe
+
+      - name: Build exe
+        run: |
+          pyinstaller --onefile --windowed --name ReClip `
+            --add-binary "ffmpeg_bin/ffmpeg.exe;bin" `
+            --add-data "templates;templates" --add-data "static;static" `
+            --hidden-import yt_dlp --collect-all yt_dlp `
+            --hidden-import brotli --hidden-import certifi `
+            app.py
+
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ReClip.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (manual run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReClip-windows
+          path: dist/ReClip.exe
+
+  macos:
+    name: macOS dmg
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Download static ffmpeg (macos)
+        run: |
+          curl -L -o ffmpeg.zip "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-macos64-gpl.zip"
+          unzip -o ffmpeg.zip -d ffmpeg_tmp
+          mkdir -p ffmpeg_bin
+          cp "$(find ffmpeg_tmp -name ffmpeg -type f | head -1)" ffmpeg_bin/ffmpeg
+          chmod +x ffmpeg_bin/ffmpeg
+
+      - name: Build .app
+        run: |
+          pyinstaller --windowed --name ReClip \
+            --add-binary "ffmpeg_bin/ffmpeg:bin" \
+            --add-data "templates:templates" --add-data "static:static" \
+            --hidden-import yt_dlp --collect-all yt_dlp \
+            --hidden-import brotli --hidden-import certifi \
+            app.py
+
+      - name: Make dmg
+        run: |
+          hdiutil create -volname ReClip -srcfolder "dist/ReClip.app" -ov -format UDZO dist/ReClip.dmg
+
+      - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/ReClip.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (manual run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReClip-macos
+          path: dist/ReClip.dmg

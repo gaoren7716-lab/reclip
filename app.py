@@ -10,17 +10,112 @@
 依赖：Flask + yt-dlp（+ 系统 ffmpeg 用于合成 MP4 / 提取 MP3）
 """
 import os
-import uuid
-import glob
+import sys
+import io
 import json
 import time
+import glob
+import uuid
+import socket
 import threading
+import zipfile
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 
 from flask import (
     Flask, request, jsonify, send_file, render_template, Response,
     stream_with_context,
 )
+
+
+# --------------------------------------------------------------------------- #
+# 打包相关（PyInstaller --onefile / .app 支持）
+# --------------------------------------------------------------------------- #
+def _user_data_dir():
+    """返回可写的应用数据目录（exe/.app 模式下用来存日志与最新 yt-dlp）。"""
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        path = os.path.join(base, "ReClip")
+    elif sys.platform == "darwin":
+        path = os.path.expanduser("~/Library/Application Support/ReClip")
+    else:
+        path = os.path.expanduser("~/.reclip")
+    try:
+        os.makedirs(path, exist_ok=True)
+    except Exception:
+        pass
+    return path
+
+
+def _safe_log(msg):
+    try:
+        with open(os.path.join(_user_data_dir(), "reclip.log"), "a", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + str(msg) + "\n")
+    except Exception:
+        pass
+
+
+def _ensure_ytdlp_fresh():
+    """Frozen（exe/.app）模式：把最新 yt-dlp 下到可写目录并插到 sys.path 最前。
+    脚本模式直接用 bundled import，跳过本函数。"""
+    if not getattr(sys, "frozen", False):
+        return
+    if os.environ.get("RECLIP_NO_UPDATE") == "1":
+        return
+    try:
+        import urllib.request
+        ytdlp_dir = os.path.join(_user_data_dir(), "ytdlp")
+        ver_file = os.path.join(ytdlp_dir, "version.txt")
+        need = True
+        try:
+            if os.path.exists(ver_file):
+                with open(ver_file, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+                if time.time() - meta.get("ts", 0) < 7 * 86400:
+                    need = False
+        except Exception:
+            pass
+        if need:
+            api = json.load(urllib.request.urlopen("https://pypi.org/pypi/yt-dlp/json", timeout=15))
+            whl = None
+            for u in api["urls"]:
+                if u["packagetype"] == "bdist_wheel" and "py3-none-any" in u["filename"]:
+                    whl = u["url"]
+                    break
+            if whl:
+                _safe_log("downloading latest yt-dlp")
+                data = urllib.request.urlopen(whl, timeout=60).read()
+                shutil.rmtree(ytdlp_dir, ignore_errors=True)
+                os.makedirs(ytdlp_dir, exist_ok=True)
+                zipfile.ZipFile(io.BytesIO(data)).extractall(ytdlp_dir)
+                with open(ver_file, "w", encoding="utf-8") as f:
+                    json.dump({"ts": time.time()}, f)
+        if os.path.isdir(ytdlp_dir) and ytdlp_dir not in sys.path:
+            sys.path.insert(0, ytdlp_dir)
+    except Exception as e:
+        _safe_log("yt-dlp update skipped: %s" % e)
+
+
+def get_ffmpeg_path():
+    """优先用打包内嵌的 ffmpeg，否则回退到系统 PATH 里的 ffmpeg。"""
+    if getattr(sys, "frozen", False):
+        base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+        cand = os.path.join(base, "bin", "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+        if os.path.exists(cand):
+            return cand
+    return "ffmpeg"
+
+
+def _find_free_port(host):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((host, 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
+
+
+_ensure_ytdlp_fresh()
 
 try:
     import yt_dlp
@@ -126,6 +221,7 @@ def run_download(job_id, url, format_choice, format_id):
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        "ffmpeg_location": get_ffmpeg_path(),
     }
 
     if format_choice == "audio":
@@ -332,10 +428,31 @@ def download_file(job_id):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8899))
+    # 窗口模式（exe/.app）下 stdout/stderr 为 None，重定向到日志文件避免崩溃
+    if getattr(sys, "frozen", False):
+        try:
+            _log_path = os.path.join(_user_data_dir(), "reclip.log")
+            _logf = open(_log_path, "a", encoding="utf-8")
+            sys.stdout = _logf
+            sys.stderr = _logf
+        except Exception:
+            pass
+
     host = os.environ.get("HOST", "127.0.0.1")
-    if os.environ.get("RECLIP_OPEN_BROWSER") == "1":
+    # PORT 未设置或为空时自动选一个空闲端口（exe 双击时用户无感）
+    _port_env = os.environ.get("PORT", "")
+    try:
+        port = int(_port_env) if _port_env else 0
+    except ValueError:
+        port = 0
+    if not port:
+        port = _find_free_port(host)
+    _safe_log("starting ReClip on %s:%d" % (host, port))
+
+    # 默认自动开浏览器；设 RECLIP_OPEN_BROWSER=0 可关闭
+    if os.environ.get("RECLIP_OPEN_BROWSER", "1") != "0":
         import webbrowser
         threading.Timer(1.5, lambda: webbrowser.open(f"http://{host}:{port}")).start()
+
     # threaded=True 保证进度 SSE 与下载任务互不阻塞
     app.run(host=host, port=port, threaded=True)
