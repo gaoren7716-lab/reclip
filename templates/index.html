@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh" data-page-node-id="U4jVFQpNHTxCHedx6BXVj6">
+<head data-page-node-id="lvAeFfdQxX1JRQPGbjZxXa">
+  <meta charset="UTF-8" data-page-node-id="Lhe87gN2od2RYKvSfyV8kp">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="iBfwGt7grbCgjlw4rStrpQ">
+  <title>ReClip — 免费视频 / 音频下载器</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" data-page-node-id="5xlopTkDKRimVXyL65dlTp">
+  <link rel="preconnect" href="https://fonts.googleapis.com" data-page-node-id="h3ruhNreOeBq2mpJcLal8c">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" data-page-node-id="EK0xkDQanRuBTqk0EY5HAK">
+  <style>
+    :root {
+      --bg: #f4f1eb;
+      --fg: #3a3a38;
+      --accent: #e85d2a;
+      --accent-hover: #d04e1f;
+      --muted: #9c9889;
+      --card: #fff;
+      --card-border: #e2ded6;
+      --success: #2d8a4e;
+      --error: #c43d3d;
+      --radius: 14px;
+      --shimmer: linear-gradient(90deg, #ebe8e2 25%, #f0ede7 50%, #ebe8e2 75%);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'DM Mono', monospace;
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      opacity: 0.03;
+      pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      background-size: 128px;
+    }
+
+    .page { max-width: 640px; margin: 0 auto; padding: 56px 24px 80px; }
+
+    .topbar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+    .lang-btn {
+      border: 1.5px solid var(--card-border);
+      background: var(--card);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 6px 16px;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.72rem;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: all 0.2s;
+    }
+    .lang-btn:hover { color: var(--fg); border-color: var(--muted); }
+
+    .brand { margin-bottom: 36px; }
+    .brand h1 {
+      font-family: 'Instrument Serif', serif;
+      font-size: 4.2rem;
+      font-weight: 400;
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: var(--fg);
+    }
+    .brand h1 em { font-style: italic; color: var(--accent); }
+    .brand p {
+      margin-top: 10px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+    }
+
+    textarea {
+      width: 100%;
+      padding: 18px 20px;
+      border: 1.5px solid var(--card-border);
+      border-radius: var(--radius);
+      background: var(--card);
+      color: var(--fg);
+      font-family: 'DM Mono', monospace;
+      font-size: 0.9rem;
+      outline: none;
+      resize: none;
+      min-height: 64px;
+      transition: border-color 0.25s, box-shadow 0.25s;
+      margin-bottom: 6px;
+    }
+    textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(232,93,42,0.08); }
+    textarea::placeholder { color: var(--muted); }
+
+    .hint { font-size: 0.72rem; color: var(--muted); margin-bottom: 14px; letter-spacing: 0.02em; }
+
+    .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+    .ex-chip {
+      border: 1.5px dashed var(--card-border);
+      background: transparent;
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 5px 14px;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.68rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .ex-chip:hover { color: var(--accent); border-color: var(--accent); }
+
+    .controls { display: flex; gap: 10px; margin-bottom: 6px; align-items: center; }
+    .pill-group {
+      display: flex; border: 1.5px solid var(--card-border);
+      border-radius: 10px; overflow: hidden; background: var(--card);
+    }
+    .pill {
+      padding: 9px 18px; font-family: 'DM Mono', monospace; font-size: 0.76rem;
+      border: none; background: transparent; color: var(--muted); cursor: pointer;
+      transition: all 0.2s; letter-spacing: 0.03em;
+    }
+    .pill.active { background: var(--fg); color: var(--bg); }
+    .pill:not(.active):hover { color: var(--fg); }
+
+    .fetch-btn {
+      flex: 1; padding: 10px 20px; border: none; border-radius: 10px;
+      background: var(--accent); color: #fff; font-family: 'DM Mono', monospace;
+      font-size: 0.82rem; font-weight: 500; cursor: pointer;
+      transition: background 0.2s, transform 0.1s; letter-spacing: 0.04em;
+    }
+    .fetch-btn:hover { background: var(--accent-hover); }
+    .fetch-btn:active { transform: scale(0.98); }
+    .fetch-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    .cards { margin-top: 24px; }
+    .card {
+      display: flex; gap: 14px; border: 1.5px solid var(--card-border);
+      border-radius: var(--radius); background: var(--card); padding: 14px;
+      margin-bottom: 10px; animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1);
+    }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+    .card-thumb { width: 120px; min-width: 120px; height: 80px; border-radius: 8px; overflow: hidden; background: var(--card-border); flex-shrink: 0; position: relative; }
+    .card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .card-thumb .no-thumb { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+    .card-thumb .no-thumb svg { width: 28px; height: 28px; opacity: 0.5; }
+    .card-thumb.loading { background: var(--shimmer); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
+
+    .skeleton-line { height: 12px; border-radius: 4px; background: var(--shimmer); background-size: 200% 100%; animation: shimmer 1.5s infinite; margin-bottom: 6px; }
+    .skeleton-line.short { width: 40%; height: 10px; }
+    .skeleton-line.medium { width: 75%; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    .card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+    .card-title { font-family: 'Instrument Serif', serif; font-size: 1rem; line-height: 1.3; color: var(--fg); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .card-meta { font-size: 0.68rem; color: var(--muted); letter-spacing: 0.03em; text-transform: uppercase; margin-bottom: 8px; }
+
+    .card-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .card-dl-btn {
+      padding: 6px 14px; border: none; border-radius: 7px; background: var(--fg); color: var(--bg);
+      font-family: 'DM Mono', monospace; font-size: 0.7rem; font-weight: 500; cursor: pointer;
+      transition: all 0.2s; letter-spacing: 0.03em;
+    }
+    .card-dl-btn:hover { background: #2d2d2a; }
+    .card-dl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .card-dl-btn.done { background: var(--success); color: #fff; }
+    .card-dl-btn.error { background: var(--error); color: #fff; }
+
+    .card-status { font-size: 0.68rem; color: var(--muted); }
+    .card-status.downloading { color: var(--accent); }
+    .card-status.done { color: var(--success); }
+    .card-status.error { color: var(--error); }
+
+    .progress { height: 6px; border-radius: 3px; background: var(--card-border); overflow: hidden; margin-top: 8px; }
+    .progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s; }
+
+    .q-chip {
+      padding: 4px 10px; border: 1.5px solid var(--card-border); border-radius: 6px;
+      background: transparent; color: var(--muted); font-family: 'DM Mono', monospace;
+      font-size: 0.65rem; cursor: pointer; transition: all 0.2s;
+    }
+    .q-chip.active { border-color: var(--fg); color: var(--fg); background: rgba(26,26,24,0.04); }
+    .q-chip:hover:not(.active) { border-color: var(--muted); }
+
+    .card.card-error { border-color: rgba(196,61,61,0.2); background: rgba(196,61,61,0.03); }
+    .card-error-icon { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(196,61,61,0.08); color: var(--error); }
+    .card-error-icon svg { width: 24px; height: 24px; }
+    .card-error-msg { font-size: 0.72rem; color: var(--error); margin-top: 2px; line-height: 1.4; }
+    .card-error-url { font-size: 0.65rem; color: var(--muted); word-break: break-all; margin-top: 4px; }
+
+    .dl-all-bar { display: flex; gap: 10px; margin-top: 16px; }
+    .dl-all-btn {
+      flex: 1; padding: 12px; border: none; border-radius: 10px; background: var(--fg); color: var(--bg);
+      font-family: 'DM Mono', monospace; font-size: 0.82rem; font-weight: 500; cursor: pointer;
+      transition: all 0.2s; letter-spacing: 0.04em;
+    }
+    .dl-all-btn:hover { background: #2d2d2a; }
+    .dl-all-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .spin { display: inline-block; width: 10px; height: 10px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .footer { margin-top: 48px; text-align: center; font-size: 0.68rem; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; line-height: 1.8; }
+
+    @media (max-width: 500px) {
+      .brand h1 { font-size: 3rem; }
+      .page { padding: 40px 16px 60px; }
+      .card { flex-direction: column; gap: 10px; }
+      .card-thumb { width: 100%; min-width: unset; height: 160px; }
+      .card-title { white-space: normal; }
+      .controls { flex-wrap: wrap; }
+      .fetch-btn { width: 100%; }
+    }
+  </style>
+</head>
+<body data-page-node-id="sWc5RP5nUIoE7zZgcjoqIO">
+  <div class="page" data-page-node-id="rj9gMYf38cRF8Bs1w5X29m">
+    <div class="topbar" data-page-node-id="7z0IE9ulis45Vo6HUjagcq">
+      <button class="lang-btn" id="langBtn" onclick="toggleLang()" data-page-node-id="2O0YP3hDNs5DbtRSFOpxDf">EN</button>
+    </div>
+
+    <div class="brand" data-page-node-id="L8V20DopzwvXE6PNsQqkJp">
+      <h1 data-page-node-id="diBMdl34mHv9fCjOBRISlH">Re<em data-page-node-id="FSsSHEg2jYF5ATSxdj4TNJ">Clip</em></h1>
+      <p id="subtitle" data-page-node-id="tTgAicIXIlvLmaOt2bB2xi">免费视频 / 音频下载器</p>
+    </div>
+
+    <textarea id="urls" placeholder="在此粘贴一个或多个视频链接（每行一个，或用空格、逗号分隔）…" rows="2"></textarea>
+    <p class="hint" id="hint" data-page-node-id="pjtJ2M7qRDuHsoSJ2SKBW4">支持 YouTube、TikTok、Instagram、B 站、Twitter/X 等 1000+ 网站</p>
+
+    <div class="examples" id="examples" data-page-node-id="oEsIQWjC8KDT0ZkomIrATz"></div>
+
+    <div class="controls" data-page-node-id="RgaESgBLXKbNrMBEky71XG">
+      <div class="pill-group" data-page-node-id="hlcijxGZM1oEWJvE5hpkGn">
+        <button class="pill active" data-format="video" onclick="setFormat(this)" data-page-node-id="5xH0S08NRN68wxPBfEY6x6">MP4</button>
+        <button class="pill" data-format="audio" onclick="setFormat(this)" data-page-node-id="dHEPAjMhm3hdM8SF6JyNZq">MP3</button>
+      </div>
+      <button class="fetch-btn" id="goBtn" onclick="go()" data-page-node-id="lCtWVO9qHA4ylqhmY58eab">获取信息</button>
+    </div>
+
+    <div id="cards" class="cards" data-page-node-id="CIayIuKvH2dyx2AHWrkahz"></div>
+
+    <div class="footer" data-page-node-id="UYdqKso53TQpA4eOsyzcaI">
+      YouTube &middot; TikTok &middot; Instagram &middot; Twitter/X &middot; Reddit &middot; Bilibili<br data-page-node-id="edeluKibbyMCM7p38KSWBt">
+      Vimeo &middot; Twitch &middot; Dailymotion &middot; SoundCloud &middot; 1000+ more
+    </div>
+  </div>
+
+  <script>
+    let currentFormat = 'video';
+    let cardData = [];
+    let lang = localStorage.getItem('reclip_lang') ||
+               (navigator.language && navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
+
+    const T = {
+      zh: {
+        subtitle: '免费视频 / 音频下载器',
+        placeholder: '在此粘贴一个或多个视频链接（每行一个，或用空格、逗号分隔）…',
+        hint: '支持 YouTube、TikTok、Instagram、B 站、Twitter/X 等 1000+ 网站',
+        fetch: '获取信息',
+        fetching: '加载中…',
+        example: '示例：',
+        download: '下载',
+        downloadAll: '一键全部下载',
+        downloading: '下载中',
+        done: '已完成',
+        retry: '重试',
+        save: '保存',
+        noFile: '下载完成但未找到文件',
+        lostConn: '与服务器失去连接',
+        copyUrl: '点此复制示例链接',
+      },
+      en: {
+        subtitle: 'Free media downloader',
+        placeholder: 'Paste one or more video URLs (one per line, or separated by space/comma)…',
+        hint: 'YouTube, TikTok, Instagram, Bilibili, Twitter/X and 1000+ sites',
+        fetch: 'Fetch',
+        fetching: 'Loading...',
+        example: 'Example: ',
+        download: 'Download',
+        downloadAll: 'Download All',
+        downloading: 'Downloading',
+        done: 'Done',
+        retry: 'Retry',
+        save: 'Save',
+        noFile: 'Download completed but no file found',
+        lostConn: 'Lost connection to server',
+        copyUrl: 'Click to use this example',
+      }
+    };
+
+    const EXAMPLES = [
+      { label: 'YouTube', url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ' },
+      { label: 'Bilibili', url: 'https://www.bilibili.com/video/BV1xx411c7mD' },
+      { label: 'TikTok', url: 'https://www.tiktok.com/@tiktok/video/1234567890' },
+    ];
+
+    function applyLang() {
+      const t = T[lang];
+      document.documentElement.lang = lang === 'zh' ? 'zh' : 'en';
+      document.getElementById('subtitle').textContent = t.subtitle;
+      document.getElementById('urls').placeholder = t.placeholder;
+      document.getElementById('hint').textContent = t.hint;
+      document.getElementById('goBtn').textContent = (document.getElementById('goBtn').disabled ? t.fetching : t.fetch);
+      document.getElementById('langBtn').textContent = lang === 'zh' ? 'EN' : '中文';
+
+      const exWrap = document.getElementById('examples');
+      exWrap.innerHTML = '';
+      const head = document.createElement('span');
+      head.className = 'hint';
+      head.style.margin = '0 4px 0 0';
+      head.textContent = t.example;
+      exWrap.appendChild(head);
+      EXAMPLES.forEach(ex => {
+        const b = document.createElement('button');
+        b.className = 'ex-chip';
+        b.textContent = ex.label;
+        b.title = t.copyUrl;
+        b.onclick = () => {
+          const ta = document.getElementById('urls');
+          ta.value = (ta.value.trim() ? ta.value.trim() + '\n' : '') + ex.url;
+          ta.focus();
+        };
+        exWrap.appendChild(b);
+      });
+    }
+
+    function toggleLang() {
+      lang = lang === 'zh' ? 'en' : 'zh';
+      localStorage.setItem('reclip_lang', lang);
+      applyLang();
+    }
+
+    function setFormat(btn) {
+      document.querySelectorAll('.pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentFormat = btn.dataset.format;
+    }
+
+    function parseUrls(text) {
+      return [...new Set(text.split(/[\s,]+/).map(u => u.trim()).filter(u => u.startsWith('http')))];
+    }
+
+    function fmtDur(s) {
+      if (!s) return '';
+      const m = Math.floor(s / 60);
+      const sec = Math.floor(s % 60);
+      return `${m}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    function fmtSize(bytes) {
+      if (!bytes) return '';
+      const mb = bytes / 1048576;
+      if (mb > 1024) return (mb / 1024).toFixed(2) + ' GB';
+      return mb.toFixed(1) + ' MB';
+    }
+
+    function friendlyError(err) {
+      const e = (err || '').toLowerCase();
+      const map = {
+        'unsupported url': { zh: '该链接暂不支持', en: 'This URL is not supported' },
+        'video unavailable': { zh: '视频不可用或已设为私有', en: 'Video is unavailable or private' },
+        'private video': { zh: '这是一个私有视频', en: 'This video is private' },
+        'http error 403': { zh: '平台拒绝访问', en: 'Access denied by the platform' },
+        'http error 404': { zh: '找不到该视频', en: 'Video not found' },
+        'copyright': { zh: '因版权原因被屏蔽', en: 'Video blocked due to copyright' },
+        'geo': { zh: '你所在地区无法观看', en: 'Video not available in your region' },
+        'timed out': { zh: '请求超时，请重试', en: 'Request timed out — try again' },
+        'network': { zh: '网络错误，请检查连接', en: 'Network error — check your connection' },
+      };
+      for (const k in map) {
+        if (e.includes(k)) return lang === 'zh' ? map[k].zh : map[k].en;
+      }
+      const raw = (err || '').trim();
+      return raw.length > 80 ? raw.slice(0, 80) + '...' : raw;
+    }
+
+    function goBtnState(loading) {
+      const btn = document.getElementById('goBtn');
+      btn.disabled = loading;
+      btn.textContent = loading ? T[lang].fetching : T[lang].fetch;
+    }
+
+    async function go() {
+      const urls = parseUrls(document.getElementById('urls').value);
+      if (!urls.length) return;
+
+      const container = document.getElementById('cards');
+      goBtnState(true);
+      container.innerHTML = '';
+      cardData = [];
+
+      // 处理 YouTube 播放列表
+      for (let i = 0; i < urls.length; i++) {
+        if (urls[i].includes('list=')) {
+          try {
+            const res = await fetch('/api/playlist', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: urls[i] }),
+            });
+            const data = await res.json();
+            if (data.urls && data.urls.length) urls.splice(i, 1, ...data.urls);
+          } catch (_) { /* 忽略，按原链接处理 */ }
+        }
+      }
+
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
+        const idx = cardData.length;
+        cardData.push({ url, status: 'loading' });
+        renderCard(idx);
+
+        try {
+          const res = await fetch('/api/info', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
+          });
+          const data = await res.json();
+          if (data.error) {
+            cardData[idx] = { ...cardData[idx], status: 'info-error', error: data.error };
+          } else {
+            cardData[idx] = {
+              ...cardData[idx], status: 'ready',
+              title: data.title || '', thumbnail: data.thumbnail || '',
+              duration: data.duration, uploader: data.uploader || '',
+              formats: data.formats || [], selectedFormatId: data.formats?.[0]?.id || null,
+            };
+          }
+        } catch (err) {
+          cardData[idx] = { ...cardData[idx], status: 'info-error', error: err.message };
+        }
+        renderCard(idx);
+      }
+
+      if (cardData.filter(c => c.status === 'ready').length > 1) renderDownloadAll();
+      goBtnState(false);
+    }
+
+    function renderCard(idx) {
+      const c = cardData[idx];
+      let el = document.getElementById(`card-${idx}`);
+      if (!el) {
+        el = document.createElement('div');
+        el.id = `card-${idx}`;
+        el.className = 'card';
+        document.getElementById('cards').appendChild(el);
+      }
+
+      if (c.status === 'loading') {
+        el.className = 'card';
+        el.innerHTML = `
+          <div class="card-thumb loading"></div>
+          <div class="card-body">
+            <div class="skeleton-line medium"></div>
+            <div class="skeleton-line short"></div>
+          </div>`;
+        return;
+      }
+
+      if (c.status === 'info-error') {
+        el.className = 'card card-error';
+        el.innerHTML = `
+          <div class="card-thumb"><div class="card-error-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div></div>
+          <div class="card-body">
+            <div class="card-title" style="color:var(--error)">${lang === 'zh' ? '无法获取视频' : 'Could not fetch video'}</div>
+            <div class="card-error-msg">${esc(friendlyError(c.error || ''))}</div>
+            <div class="card-error-url">${esc(c.url)}</div>
+          </div>`;
+        return;
+      }
+
+      el.className = 'card';
+      const isAudio = currentFormat === 'audio';
+      let thumbHtml;
+      if (isAudio) {
+        thumbHtml = `<div class="no-thumb" style="color:var(--accent)"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
+      } else if (c.thumbnail) {
+        thumbHtml = `<img src="${c.thumbnail}" alt="">`;
+      } else {
+        thumbHtml = `<div class="no-thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></div>`;
+      }
+
+      let qualityChips = '';
+      if (!isAudio && c.formats && c.formats.length > 1) {
+        qualityChips = c.formats.map(f =>
+          `<button class="q-chip${f.id === c.selectedFormatId ? ' active' : ''}" onclick="pickFormat(${idx}, '${f.id}')">${f.label}</button>`
+        ).join('');
+      }
+
+      let actionHtml = '';
+      if (c.status === 'ready') {
+        actionHtml = `<button class="card-dl-btn" onclick="dlCard(${idx})">${T[lang].download}</button>${qualityChips}`;
+      } else if (c.status === 'downloading') {
+        const pct = (c.progress || 0).toFixed(0);
+        const extra = [];
+        if (c.speed) extra.push(fmtSize(c.speed) + '/s');
+        if (c.eta) extra.push(lang === 'zh' ? '剩 ' + c.eta + 's' : c.eta + 's left');
+        actionHtml = `<span class="card-status downloading"><span class="spin"></span> ${T[lang].downloading} ${pct}%</span>
+          <div class="progress" style="flex-basis:100%"><div class="progress-fill" style="width:${pct}%"></div></div>
+          <span class="card-status">${extra.join(' · ')}</span>`;
+      } else if (c.status === 'done') {
+        actionHtml = `<button class="card-dl-btn done" onclick="saveCard(${idx})">${T[lang].save}</button>
+          <span class="card-status done">${esc(c.filename || '')}</span>`;
+      } else if (c.status === 'error') {
+        actionHtml = `<button class="card-dl-btn" onclick="dlCard(${idx})">${T[lang].retry}</button>
+          <span class="card-status error">${esc(friendlyError(c.error || T[lang].noFile))}</span>`;
+      }
+
+      el.innerHTML = `
+        <div class="card-thumb">${thumbHtml}</div>
+        <div class="card-body">
+          <div class="card-title">${esc(c.title || (lang === 'zh' ? '未命名' : 'Untitled'))}</div>
+          <div class="card-meta">${esc(c.uploader)}${c.duration ? ' · ' + fmtDur(c.duration) : ''}</div>
+          <div class="card-actions">${actionHtml}</div>
+        </div>`;
+    }
+
+    function renderDownloadAll() {
+      const existing = document.getElementById('dl-all-bar');
+      if (existing) existing.remove();
+      const bar = document.createElement('div');
+      bar.id = 'dl-all-bar';
+      bar.className = 'dl-all-bar';
+      bar.innerHTML = `<button class="dl-all-btn" onclick="dlAll()">${T[lang].downloadAll}</button>`;
+      document.getElementById('cards').appendChild(bar);
+    }
+
+    function pickFormat(idx, formatId) {
+      cardData[idx].selectedFormatId = formatId;
+      renderCard(idx);
+    }
+
+    async function dlCard(idx) {
+      const c = cardData[idx];
+      c.status = 'downloading';
+      c.error = null;
+      c.progress = 0;
+      renderCard(idx);
+
+      try {
+        const res = await fetch('/api/download', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: c.url, format: currentFormat,
+            format_id: c.selectedFormatId, title: c.title || '',
+          }),
+        });
+        const data = await res.json();
+        if (data.error) { c.status = 'error'; c.error = data.error; renderCard(idx); return; }
+        c.jobId = data.job_id;
+        trackProgress(idx);
+      } catch (err) {
+        c.status = 'error'; c.error = err.message; renderCard(idx);
+      }
+    }
+
+    function trackProgress(idx) {
+      const c = cardData[idx];
+      const es = new EventSource(`/api/progress/${c.jobId}`);
+      es.onmessage = (ev) => {
+        let d;
+        try { d = JSON.parse(ev.data); } catch (_) { return; }
+        if (d.status === 'done') {
+          es.close();
+          c.status = 'done'; c.filename = d.filename; renderCard(idx); saveCard(idx);
+        } else if (d.status === 'error') {
+          es.close();
+          c.status = 'error'; c.error = d.error || T[lang].noFile; renderCard(idx);
+        } else {
+          c.status = 'downloading';
+          c.progress = d.progress || 0;
+          c.speed = d.speed; c.eta = d.eta;
+          renderCard(idx);
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        if (c.status !== 'done') { c.status = 'error'; c.error = T[lang].lostConn; renderCard(idx); }
+      };
+    }
+
+    function saveCard(idx) {
+      const c = cardData[idx];
+      if (!c.jobId) return;
+      const a = document.createElement('a');
+      a.href = `/api/file/${c.jobId}`;
+      a.download = c.filename || '';
+      a.click();
+    }
+
+    async function dlAll() {
+      const btn = document.querySelector('.dl-all-btn');
+      if (btn) { btn.disabled = true; btn.textContent = T[lang].downloading + '...'; }
+      for (let i = 0; i < cardData.length; i++) {
+        if (cardData[i].status === 'ready') await dlCard(i);
+      }
+      if (btn) { btn.disabled = false; btn.textContent = T[lang].downloadAll; }
+    }
+
+    applyLang();
+  </script>
+</body>
+</html>
