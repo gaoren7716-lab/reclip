@@ -31,6 +31,7 @@ jobs:
         run: |
           $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
           Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          if ((Get-Item ffmpeg.zip).Length -lt 1MB) { throw "ffmpeg.zip 下载异常：文件过小（$((Get-Item ffmpeg.zip).Length) 字节），疑似 URL 失效" }
           Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg_tmp
           $bin = (Get-ChildItem ffmpeg_tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName
           New-Item -ItemType Directory -Force -Path ffmpeg_bin | Out-Null
@@ -44,6 +45,26 @@ jobs:
             --hidden-import yt_dlp --collect-all yt_dlp `
             --hidden-import brotli --hidden-import certifi `
             app.py
+
+      - name: Smoke test exe
+        shell: pwsh
+        run: |
+          $env:PORT = "8899"; $env:RECLIP_OPEN_BROWSER = "0"; $env:RECLIP_NO_UPDATE = "1"
+          $p = Start-Process -FilePath "dist\ReClip.exe" -PassThru
+          try {
+            $ok = $false
+            foreach ($i in 1..20) {
+              Start-Sleep -Seconds 1
+              try {
+                $r = Invoke-WebRequest -Uri "http://127.0.0.1:8899/" -UseBasicParsing -TimeoutSec 3
+                if ($r.StatusCode -eq 200) { $ok = $true; break }
+              } catch {}
+            }
+            if (-not $ok) { throw "exe 未能在 :8899 响应 HTTP 200" }
+            Write-Host ("smoke OK: {0}, {1} bytes" -f $r.StatusCode, $r.Content.Length)
+          } finally {
+            Stop-Process -Id $p.Id -Force
+          }
 
       - name: Upload to Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -74,15 +95,19 @@ jobs:
       - name: Install build deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pyinstaller
+          pip install -r requirements.txt pyinstaller imageio-ffmpeg
 
-      - name: Download static ffmpeg (macos)
+      # 说明：BtbN/FFmpeg-Builds 不提供 macOS 构建（只有 linux/win），
+      # 故这里改用 imageio-ffmpeg 的 pip 原生静态构建（macOS arm64，含 libmp3lame）。
+      - name: Install static ffmpeg (macos arm64)
         run: |
-          curl -L -o ffmpeg.zip "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-macos64-gpl.zip"
-          unzip -o ffmpeg.zip -d ffmpeg_tmp
+          FF=$(python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())")
+          echo "ffmpeg binary: $FF"
+          test -s "$FF" || { echo "imageio-ffmpeg 未提供二进制"; exit 1; }
           mkdir -p ffmpeg_bin
-          cp "$(find ffmpeg_tmp -name ffmpeg -type f | head -1)" ffmpeg_bin/ffmpeg
+          cp "$FF" ffmpeg_bin/ffmpeg
           chmod +x ffmpeg_bin/ffmpeg
+          file ffmpeg_bin/ffmpeg || true
 
       - name: Build .app
         run: |
@@ -92,6 +117,20 @@ jobs:
             --hidden-import yt_dlp --collect-all yt_dlp \
             --hidden-import brotli --hidden-import certifi \
             app.py
+
+      - name: Smoke test app
+        run: |
+          PORT=8899 RECLIP_OPEN_BROWSER=0 RECLIP_NO_UPDATE=1 ./dist/ReClip.app/Contents/MacOS/ReClip &
+          PID=$!
+          ok=0
+          for i in $(seq 1 20); do
+            sleep 1
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8899/ || true)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+          done
+          kill $PID 2>/dev/null || true
+          if [ "$ok" != "1" ]; then echo "app 未能在 :8899 响应 HTTP 200"; exit 1; fi
+          echo "smoke OK"
 
       - name: Make dmg
         run: |
