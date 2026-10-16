@@ -20,7 +20,7 @@ import socket
 import threading
 import zipfile
 import shutil
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 
 from flask import (
     Flask, request, jsonify, send_file, render_template, Response,
@@ -120,9 +120,13 @@ _ensure_ytdlp_fresh()
 try:
     import yt_dlp
     from yt_dlp.utils import DownloadError
+    from yt_dlp.utils import DownloadCancelled
 except Exception:  # pragma: no cover - 依赖由启动脚本保证安装
     yt_dlp = None
     DownloadError = Exception
+
+    class DownloadCancelled(Exception):
+        """yt-dlp 不可用时的兜底（新版 yt-dlp 自带同名的取消信号异常）。"""
 
 app = Flask(__name__)
 
@@ -131,31 +135,70 @@ DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 jobs = {}
-_executor = ThreadPoolExecutor(max_workers=8)
+_executor = ThreadPoolExecutor(max_workers=16)
 
-# 单任务下载超时（秒），可用环境变量 RECLIP_TIMEOUT 覆盖
-DEFAULT_TIMEOUT = int(os.environ.get("RECLIP_TIMEOUT", "1800"))
+# 单任务下载超时（秒），可用环境变量 RECLIP_TIMEOUT 覆盖；设为 0 表示不限制
+DEFAULT_TIMEOUT = int(os.environ.get("RECLIP_TIMEOUT", "1800") or 0)
+
+# 本地模式下校验 Host 头，阻断 DNS rebinding 攻击；
+# 绑定 0.0.0.0（Docker / 局域网）时关闭校验。
+HOST_BINDING = os.environ.get("HOST", "127.0.0.1")
+
+
+@app.before_request
+def _guard_host():
+    if HOST_BINDING != "127.0.0.1":
+        return None
+    raw = (request.host or "").lower()
+    if raw.startswith("["):                      # IPv6 字面量 [::1]:8899
+        host = raw[1:raw.find("]")]
+    else:
+        host = raw.split(":")[0]
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return jsonify({"error": "Forbidden"}), 403
+    return None
+
+
+def _cleanup_old():
+    """清理 24h 前的下载文件，以及 1 小时前已结束的任务记录，防无限堆积。"""
+    now = time.time()
+    try:
+        for f in glob.glob(os.path.join(DOWNLOAD_DIR, "*")):
+            try:
+                if now - os.path.getmtime(f) > 86400:
+                    os.remove(f)
+            except OSError:
+                pass
+    except Exception:
+        pass
+    for jid in list(jobs):
+        j = jobs.get(jid) or {}
+        if j.get("status") in ("done", "error") and now - j.get("ended_at", 0) > 3600:
+            jobs.pop(jid, None)
 
 
 # --------------------------------------------------------------------------- #
 # 工具函数
 # --------------------------------------------------------------------------- #
 def run_with_timeout(fn, timeout, default=None):
-    """在线程池里跑 fn，超时返回 default。"""
+    """在线程池里跑 fn，超时返回 default；真实异常向上抛出（由路由返回具体错误）。"""
     fut = _executor.submit(fn)
     try:
         return fut.result(timeout=timeout)
-    except Exception:
+    except FutureTimeoutError:
         return default
 
 
-def make_progress_hook(job_id):
-    """yt-dlp 进度钩子，把进度写进 jobs[job_id]。"""
+def make_progress_hook(job_id, deadline):
+    """yt-dlp 进度钩子：写进度 + 到达截止时间就中止下载。"""
 
     def hook(d):
         job = jobs.get(job_id)
         if not job:
             return
+        if deadline and time.time() > deadline:
+            raise DownloadCancelled(
+                "下载超时（RECLIP_TIMEOUT=%d 秒），已中止；可调大该环境变量后重试" % DEFAULT_TIMEOUT)
         status = d.get("status")
         if status == "downloading":
             total = d.get("total_bytes") or d.get("total_bytes_estimate")
@@ -213,15 +256,17 @@ def build_formats(info):
 def run_download(job_id, url, format_choice, format_id):
     job = jobs[job_id]
     out_template = os.path.join(DOWNLOAD_DIR, f"{job_id}.%(ext)s")
+    deadline = time.time() + DEFAULT_TIMEOUT if DEFAULT_TIMEOUT > 0 else None
 
     ydl_opts = {
         "outtmpl": out_template,
         "noplaylist": True,
-        "progress_hooks": [make_progress_hook(job_id)],
+        "progress_hooks": [make_progress_hook(job_id, deadline)],
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
         "ffmpeg_location": get_ffmpeg_path(),
+        "socket_timeout": 30,   # 单个网络请求卡死时 30 秒内报错，而非永久挂起
     }
 
     if format_choice == "audio":
@@ -262,19 +307,25 @@ def run_download(job_id, url, format_choice, format_id):
 
         job["status"] = "done"
         job["file"] = chosen
+        job["ended_at"] = time.time()
         ext = os.path.splitext(chosen)[1]
         title = job.get("title", "").strip()
         if title:
-            safe = "".join(c for c in title if c not in r'\/:*?"<>|').strip()[:100].strip()
+            safe = "".join(
+                c for c in title
+                if c.isprintable() and c not in r'\/:*?"<>|'
+            ).strip().rstrip(". ")[:100].strip()
             job["filename"] = f"{safe}{ext}" if safe else os.path.basename(chosen)
         else:
             job["filename"] = os.path.basename(chosen)
     except DownloadError as e:
         job["status"] = "error"
         job["error"] = str(e)
+        job["ended_at"] = time.time()
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)
+        job["ended_at"] = time.time()
 
 
 # --------------------------------------------------------------------------- #
@@ -335,8 +386,12 @@ def get_playlist_info():
 
     try:
         info = run_with_timeout(_extract, 60)
-        entries = (info or {}).get("entries", [])
-        urls = [e.get("url") for e in entries if e.get("url")]
+        entries = (info or {}).get("entries", []) or []
+        urls = []
+        for e in entries:
+            u = e.get("url") or e.get("id")
+            if u and str(u).startswith("http"):
+                urls.append(u)
         return jsonify({"urls": urls})
     except DownloadError as e:
         return jsonify({"error": str(e)}), 400
@@ -354,6 +409,8 @@ def start_download():
 
     if not url:
         return jsonify({"error": "No URL provided"}), 400
+
+    _cleanup_old()   # 顺手清理过期任务记录与旧下载文件，防无限堆积
 
     job_id = uuid.uuid4().hex[:10]
     jobs[job_id] = {
@@ -427,6 +484,17 @@ def download_file(job_id):
     )
 
 
+def _port_bindable(host, port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
 if __name__ == "__main__":
     # 窗口模式（exe/.app）下 stdout/stderr 为 None，重定向到日志文件避免崩溃
     if getattr(sys, "frozen", False):
@@ -447,7 +515,12 @@ if __name__ == "__main__":
         port = 0
     if not port:
         port = _find_free_port(host)
+    elif not _port_bindable(host, port):
+        _safe_log("port %d busy, picking a free one" % port)
+        port = _find_free_port(host)
     _safe_log("starting ReClip on %s:%d" % (host, port))
+
+    _cleanup_old()
 
     # 默认自动开浏览器；设 RECLIP_OPEN_BROWSER=0 可关闭
     if os.environ.get("RECLIP_OPEN_BROWSER", "1") != "0":

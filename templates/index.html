@@ -482,8 +482,9 @@
       let thumbHtml;
       if (isAudio) {
         thumbHtml = `<div class="no-thumb" style="color:var(--accent)"><svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg></div>`;
-      } else if (c.thumbnail) {
-        thumbHtml = `<img src="${c.thumbnail}" alt="">`;
+      } else if (c.thumbnail && /^https?:\/\//i.test(c.thumbnail)) {
+        // 封面 URL 来自外部站点：转义 + 仅允许 http(s) + no-referrer（绕过图床防盗链）
+        thumbHtml = `<img src="${esc(c.thumbnail)}" alt="" referrerpolicy="no-referrer">`;
       } else {
         thumbHtml = `<div class="no-thumb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="8" cy="8" r="1.5"/><path d="m21 15-5-5L5 21"/></svg></div>`;
       }
@@ -491,7 +492,7 @@
       let qualityChips = '';
       if (!isAudio && c.formats && c.formats.length > 1) {
         qualityChips = c.formats.map(f =>
-          `<button class="q-chip${f.id === c.selectedFormatId ? ' active' : ''}" onclick="pickFormat(${idx}, '${f.id}')">${f.label}</button>`
+          `<button class="q-chip${f.id === c.selectedFormatId ? ' active' : ''}" data-idx="${idx}" data-fid="${esc(f.id)}" onclick="pickFormat(this)">${f.label}</button>`
         ).join('');
       }
 
@@ -533,8 +534,9 @@
       document.getElementById('cards').appendChild(bar);
     }
 
-    function pickFormat(idx, formatId) {
-      cardData[idx].selectedFormatId = formatId;
+    function pickFormat(btn) {
+      const idx = Number(btn.dataset.idx);
+      cardData[idx].selectedFormatId = btn.dataset.fid;
       renderCard(idx);
     }
 
@@ -582,8 +584,10 @@
         }
       };
       es.onerror = () => {
-        es.close();
-        if (c.status !== 'done') { c.status = 'error'; c.error = T[lang].lostConn; renderCard(idx); }
+        // 连接抖动时 EventSource 会自动重连；只有彻底关闭才判定失败
+        if (es.readyState === EventSource.CLOSED) {
+          if (c.status !== 'done') { c.status = 'error'; c.error = T[lang].lostConn; renderCard(idx); }
+        }
       };
     }
 

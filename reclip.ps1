@@ -2,7 +2,7 @@
 # 双击 reclip.bat 即会调用本脚本。
 # 职责：找到/安装 Python -> 创建虚拟环境 -> 安装 flask/yt-dlp ->
 #       确保 ffmpeg 可用 -> 自动打开浏览器 -> 启动服务。
-# 可用环境变量：RECLIP_NO_UPDATE=1 跳过 yt-dlp 更新；PORT 修改端口。
+# 可用环境变量：RECLIP_NO_UPDATE=1 跳过 yt-dlp 更新；PORT 修改端口（不设则自动选空闲端口）。
 
 $ErrorActionPreference = 'Continue'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -13,7 +13,7 @@ function WriteOk($msg)   { Write-Host "  ✓ $msg" -ForegroundColor Green }
 function WriteWarn($msg) { Write-Host "  ! $msg" -ForegroundColor Yellow }
 function WriteErr($msg)  { Write-Host "  ✗ $msg" -ForegroundColor Red }
 
-$PORT = if ($env:PORT) { $env:PORT } else { "8899" }
+# 端口与浏览器交给 app.py 处理（自动选空闲端口 + 自动打开正确地址）
 
 # --------------------------------------------------------------------------- #
 # 1. 找到 Python
@@ -31,15 +31,25 @@ if (-not $PY) {
     WriteWarn "未检测到 Python，尝试通过 winget 安装..."
     try {
         winget install Python.Python.3.12 -e --source winget --accept-package-agreements --accept-source-agreements | Out-Null
-        # 刷新 PATH
+        # 刷新 PATH 后重新探测（不假设一定是 py）
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-        $PY = 'py'
-    } catch {
-        WriteErr "Python 安装失败。请手动安装：https://www.python.org/downloads/  （勾选 'Add to PATH'）"
+        foreach ($cand in @('py', 'python', 'python3')) {
+            try {
+                $v = & $cand -c "import sys; print(sys.version.split()[0])" 2>$null
+                if ($v) { $PY = $cand; break }
+            } catch { }
+        }
+    } catch { }
+    if (-not $PY) {
+        WriteErr "Python 安装失败。请手动安装：https://www.python.org/downloads/  （勾选 'Add to PATH'）后重新运行"
         exit 1
     }
 }
 $v = & $PY -c "import sys; print(sys.version.split()[0])" 2>$null
+if (-not $v) {
+    WriteErr "Python 无法运行（$PY）。请重新安装并勾选 'Add to PATH'"
+    exit 1
+}
 WriteOk "Python $v"
 
 # --------------------------------------------------------------------------- #
@@ -56,6 +66,10 @@ WriteOk "虚拟环境就绪"
 
 & $PY -m pip install -q --upgrade pip 2>$null
 & $PY -m pip install -q flask 2>$null
+if ($LASTEXITCODE -ne 0) {
+    WriteErr "flask 安装失败，请检查网络后重新运行本脚本"
+    exit 1
+}
 if ($env:RECLIP_NO_UPDATE) {
     & $PY -m pip install -q yt-dlp 2>$null
 } else {
@@ -89,11 +103,13 @@ if (-not $ffmpegOk) {
     if (-not $installed) {
         # 兜底：下载 gyan.dev 的便携版并解压到 .tools
         try {
-            $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-7.1-essentials_build.zip"
+            # 用 release 稳定别名，避免硬编码版本号随更新失效
+            $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
             $zip = Join-Path $ScriptDir ".tools\ffmpeg.zip"
             New-Item -ItemType Directory -Force -Path (Join-Path $ScriptDir ".tools") | Out-Null
             Write-Host "  下载 ffmpeg 便携版..."
             Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+            if ((Get-Item $zip).Length -lt 1MB) { throw "ffmpeg 下载异常：文件仅 $((Get-Item $zip).Length) 字节" }
             Expand-Archive -Path $zip -DestinationPath (Join-Path $ScriptDir ".tools\ffmpeg_extract") -Force
             $inner = Get-ChildItem (Join-Path $ScriptDir ".tools\ffmpeg_extract") -Directory | Select-Object -First 1
             Move-Item -Path (Join-Path $inner.FullName "*") -Destination (Join-Path $ScriptDir ".tools\ffmpeg") -Force
@@ -112,18 +128,7 @@ if (-not $ffmpegOk) {
 # --------------------------------------------------------------------------- #
 # 4. 启动（自动打开浏览器）
 # --------------------------------------------------------------------------- #
-WriteStep "启动 ReClip 服务..."
-$env:PORT = $PORT
-$env:RECLIP_OPEN_BROWSER = "0"   # 浏览器由脚本负责打开，避免重复
-
-# 2 秒后打开浏览器
-$job = Start-Job -ScriptBlock {
-    Start-Sleep -Seconds 2
-    Start-Process "http://localhost:$using:PORT"
-}
-try {
-    & $PY app.py
-} finally {
-    Stop-Job $job -ErrorAction SilentlyContinue | Out-Null
-    Remove-Job $job -ErrorAction SilentlyContinue | Out-Null
-}
+WriteStep "启动 ReClip 服务（浏览器将由程序自动打开）..."
+# 端口与浏览器完全交给 app.py：不设 PORT 时自动选空闲端口，
+# 端口被占用时也会自动换端口，浏览器打开的地址永远正确。
+& $PY app.py

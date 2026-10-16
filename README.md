@@ -13,9 +13,18 @@
 
 ---
 
-## 🚀 一分钟上手（三选一）
+## 🚀 一分钟上手
 
-### 方式 A：Windows 双击即用（最推荐，零门槛）
+### 方式 A：下载打包版（最傻瓜，免装 Python）
+
+1. 打开 [Releases](https://github.com/gaoren7716-lab/reclip/releases) 页面。
+2. Windows 下载 **`ReClip.exe`**，macOS 下载 **`ReClip.dmg`**。
+3. 双击运行 → 浏览器自动打开 → 粘贴链接即可。
+
+> 打包版内置 ffmpeg 与最新 yt-dlp（联网自动更新）。
+> 未做代码签名：Windows 首次运行若弹 SmartScreen 黄条，点「更多信息 → 仍要运行」即可。
+
+### 方式 B：Windows 双击脚本（脚本版，永远最新）
 
 1. 下载本仓库（绿色 `Code` → `Download ZIP`，解压）。
 2. **双击 `reclip.bat`**。
@@ -24,7 +33,7 @@
 > 首次运行会联网安装 Python 依赖与 ffmpeg，请保持网络畅通，耐心等待一两分钟。
 > 之后每次双击都是秒开。
 
-### 方式 B：macOS / Linux 一行命令
+### 方式 C：macOS / Linux 一行命令
 
 ```bash
 git clone https://github.com/gaoren7716-lab/reclip.git
@@ -34,7 +43,7 @@ cd reclip
 
 脚本会自动装好依赖、打开浏览器。
 
-### 方式 C：Docker（服务器 / 高级用户）
+### 方式 D：Docker（服务器 / 高级用户）
 
 ```bash
 docker compose up -d --build
@@ -62,8 +71,11 @@ docker compose up -d --build
 - **真实进度条**：实时百分比 + 速度 + 预估剩余时间（SSE 推送）。
 - **中 / 英界面**：右上角一键切换，默认跟随浏览器语言。
 - **自动更新 yt-dlp**：各平台提取器经常失效，启动时自动更新（可关闭）。
+- **超时保护**：下载卡住超过 `RECLIP_TIMEOUT` 自动中止，不会永远转圈。
+- **自动清理**：下载文件保留 24 小时后自动清理，任务记录 1 小时后清空，不占磁盘。
+- **安全加固**：本地模式校验 Host 头（防 DNS rebinding），封面 URL 转义（防注入）。
 - **零构建前端**：纯 HTML/CSS/JS，没有打包步骤。
-- **跨平台一键启动**：Windows 双击、macOS/Linux 脚本、Docker 三选一。
+- **跨平台一键启动**：exe/dmg 双击、Windows 脚本、macOS/Linux 脚本、Docker 四选一。
 
 ---
 
@@ -71,10 +83,11 @@ docker compose up -d --build
 
 | 变量 | 作用 | 默认值 |
 | --- | --- | --- |
-| `PORT` | 服务端口 | `8899` |
-| `HOST` | 监听地址（`0.0.0.0` 可局域网访问） | `127.0.0.1` |
-| `RECLIP_TIMEOUT` | 单任务下载超时（秒） | `1800` |
+| `PORT` | 服务端口；不设则**自动选空闲端口**，被占用时也会自动换 | 自动 |
+| `HOST` | 监听地址（`0.0.0.0` 可局域网访问；`127.0.0.1` 时启用 Host 校验防 DNS rebinding） | `127.0.0.1` |
+| `RECLIP_TIMEOUT` | 单任务下载超时（秒），超时自动中止；`0` 表示不限制 | `1800` |
 | `RECLIP_NO_UPDATE` | 设为 `1` 跳过 yt-dlp 启动更新 | 未设置（即更新） |
+| `RECLIP_OPEN_BROWSER` | 设为 `0` 关闭自动打开浏览器 | 自动打开 |
 
 示例（Windows PowerShell）：
 ```powershell
@@ -92,7 +105,8 @@ $env:PORT = 9000
 | 提示「未检测到 Python」 | 脚本会尝试 winget 安装；失败时手动装 [Python](https://www.python.org/downloads/)，**务必勾选 Add to PATH**。 |
 | 提示缺少 ffmpeg | Windows 会自动 winget 安装；失败则手动下载 [ffmpeg](https://www.gyan.dev/ffmpeg/builds/) 并加入 PATH。仅影响 MP4 合成 / MP3 提取。 |
 | 「该链接暂不支持 / 视频不可用」 | 平台限制或需登录；换源或确认链接有效。 |
-| 下载很慢 / 卡住 | 大文件请调大 `RECLIP_TIMEOUT`；检查网络。 |
+| 下载卡住 / 一直转圈 | 超过 `RECLIP_TIMEOUT`（默认 30 分钟）会自动中止并提示原因；大文件可调大该值。 |
+| 端口被占用 | 无需处理——程序会自动换一个空闲端口，浏览器打开的地址始终正确。 |
 | yt-dlp 报错「Sign in to confirm」 | YouTube 风控，等待 yt-dlp 更新或换链接；可设 `RECLIP_NO_UPDATE=1` 后用 `pip install -U yt-dlp` 手动升级。 |
 
 ---
@@ -117,10 +131,10 @@ $env:PORT = 9000
 
 ### English (short)
 
-A self-hosted video/audio downloader (MP4/MP3) for 1000+ sites via yt-dlp. This is a fork-and-upgrade of [averygan/reclip](https://github.com/averygan/reclip) with: one-click Windows launcher (`reclip.bat`), real progress bars (SSE), and a Chinese/English UI toggle.
+A self-hosted video/audio downloader (MP4/MP3) for 1000+ sites via yt-dlp. This is a fork-and-upgrade of [averygan/reclip](https://github.com/averygan/reclip) with: ready-to-run `ReClip.exe` / `ReClip.dmg` builds, one-click launchers, real progress bars (SSE), download timeout & auto-cleanup, and a Chinese/English UI toggle.
 
-- **Windows**: double-click `reclip.bat`.
-- **macOS/Linux**: `./reclip.sh`.
+- **Windows / macOS**: download from [Releases](https://github.com/gaoren7716-lab/reclip/releases) and double-click.
+- **From source**: Windows double-click `reclip.bat`; macOS/Linux `./reclip.sh`.
 - **Docker**: `docker compose up -d --build`.
 
 Open <http://localhost:8899>. MIT licensed.
