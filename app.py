@@ -97,13 +97,17 @@ def _ensure_ytdlp_fresh():
 
 
 def get_ffmpeg_path():
-    """优先用打包内嵌的 ffmpeg，否则回退到系统 PATH 里的 ffmpeg。"""
+    """优先用打包内嵌的 ffmpeg，否则回退到系统 PATH 里的 ffmpeg。
+
+    返回 None 表示找不到——此时不应设置 ffmpeg_location，
+    让 yt-dlp 自己走 PATH 查找（传裸名反而会破坏其查找逻辑）。
+    """
     if getattr(sys, "frozen", False):
         base = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
         cand = os.path.join(base, "bin", "ffmpeg.exe" if os.name == "nt" else "ffmpeg")
         if os.path.exists(cand):
             return cand
-    return "ffmpeg"
+    return shutil.which("ffmpeg")
 
 
 def _find_free_port(host):
@@ -265,9 +269,11 @@ def run_download(job_id, url, format_choice, format_id):
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        "ffmpeg_location": get_ffmpeg_path(),
         "socket_timeout": 30,   # 单个网络请求卡死时 30 秒内报错，而非永久挂起
     }
+    _ff = get_ffmpeg_path()
+    if _ff:
+        ydl_opts["ffmpeg_location"] = _ff
 
     if format_choice == "audio":
         ydl_opts.update({
